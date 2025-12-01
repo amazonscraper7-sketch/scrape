@@ -21,6 +21,15 @@ try:
 except ImportError:
     razorpay = None
 
+st.set_page_config(
+    page_title="Scraper Pro",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+load_dotenv()  # Load .env from project root
+
 # --- Configuration ---
 BASE_DIR = Path(__file__).resolve().parent
 SCRAPER_SCRIPT = str(BASE_DIR / "asin.py")
@@ -111,11 +120,14 @@ PLANS = {
 }
 
 def _secret_or_env(key: str, default: str = "") -> str:
+    # Prefer environment variables (e.g. from .env) first to avoid "No secrets found" warning
+    val = os.getenv(key)
+    if val:
+        return val
     try:
-        # Prefer Streamlit Cloud secrets when available
         return st.secrets.get(key, default)  # type: ignore[attr-defined]
     except Exception:
-        return os.getenv(key, default)
+        return default
 
 RAZORPAY_KEY_ID = _secret_or_env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = _secret_or_env("RAZORPAY_KEY_SECRET", "")
@@ -184,14 +196,9 @@ if "selected_plan" not in st.session_state:
 if "deducted_fetched" not in st.session_state:
     st.session_state["deducted_fetched"] = 0
 
-load_dotenv()  # Load .env from project root
 
-st.set_page_config(
-    page_title="Scraper Pro",
-    page_icon="🚀",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+
+
 
 # --- Custom CSS ---
 st.markdown("""
