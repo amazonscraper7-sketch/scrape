@@ -1,0 +1,10 @@
+Reading ASINs from /Users/adityakumar/scrape/productScrape/uploaded_asins.xlsx...
+Found 75514 unique ASINs.
+Loaded 0 already fetched ASINs.
+Starting scrape process for 75514 products...
+Scraping 1/75514: B000052XFC
+Scraping 2/75514: B000052Y5Q
+Scraping 3/75514: B000052Y5U
+Scraping 4/75514: B000052YVA
+Scraping 5/75514: B0000530XR
+Scraping 6/75514: B00005313P

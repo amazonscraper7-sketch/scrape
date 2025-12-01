@@ -21,15 +21,6 @@ try:
 except ImportError:
     razorpay = None
 
-st.set_page_config(
-    page_title="Scraper Pro",
-    page_icon="🚀",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-load_dotenv()  # Load .env from project root
-
 # --- Configuration ---
 BASE_DIR = Path(__file__).resolve().parent
 SCRAPER_SCRIPT = str(BASE_DIR / "asin.py")
@@ -198,7 +189,14 @@ if "deducted_fetched" not in st.session_state:
 
 
 
+st.set_page_config(
+    page_title="Scraper Pro",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+load_dotenv()  # Load .env from project root
 
 # --- Custom CSS ---
 st.markdown("""
@@ -347,6 +345,9 @@ def start_scraper(input_file, category, p_type, formula):
     if st.session_state["credits"] < 1:
         st.error("Not enough credits to start. Purchase a plan.")
         return
+    if not input_file or not os.path.exists(input_file):
+        st.error("Please upload a valid .xlsx file before starting.")
+        return
     # Reset progressive deduction baseline
     st.session_state["deducted_fetched"] = get_stats()[0]
     
@@ -354,7 +355,8 @@ def start_scraper(input_file, category, p_type, formula):
         process = subprocess.Popen(
             [sys.executable, "-u", SCRAPER_SCRIPT, input_file, category, p_type, formula],
             stdout=log_file,
-            stderr=subprocess.STDOUT
+            stderr=subprocess.STDOUT,
+            cwd=str(BASE_DIR)
         )
     
     with open(PID_FILE, "w") as f:
@@ -493,9 +495,10 @@ with st.sidebar:
     
     target_file = DEFAULT_EXCEL
     if uploaded_file:
-        target_file = "uploaded_asins.xlsx"
-        with open(target_file, "wb") as f:
+        target_path = BASE_DIR / "uploaded_asins.xlsx"
+        with open(target_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
+        target_file = str(target_path)
         st.success(f"Loaded: {uploaded_file.name}")
     
     total_asins = get_total_asins(target_file)
@@ -726,8 +729,9 @@ st.markdown("### 📟 Live Terminal")
 log_placeholder = st.empty()
 
 def render_terminal():
-    if os.path.exists("scraper.log"):
-        with open("scraper.log", "r") as f:
+    log_path = BASE_DIR / "scraper.log"
+    if os.path.exists(log_path):
+        with open(log_path, "r") as f:
             lines = f.readlines()
             # Show last 20 lines like before
             log_content = "".join(lines[-20:])
