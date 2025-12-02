@@ -7,6 +7,7 @@ import os
 import re
 
 API_KEY = "6914383c598e95b832e882e3"
+#API_KEY = "692d9a7cb75278167a03e1cc" aditya
 
 def get_asins_from_excel(file_path):
     print(f"Reading ASINs from {file_path}...")

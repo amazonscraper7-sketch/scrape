@@ -21,6 +21,16 @@ try:
 except ImportError:
     razorpay = None
 
+
+st.set_page_config(
+    page_title="Scraper Pro",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+load_dotenv()  # Load .env from project root
+
 # --- Configuration ---
 BASE_DIR = Path(__file__).resolve().parent
 SCRAPER_SCRIPT = str(BASE_DIR / "asin.py")
@@ -189,14 +199,7 @@ if "deducted_fetched" not in st.session_state:
 
 
 
-st.set_page_config(
-    page_title="Scraper Pro",
-    page_icon="🚀",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
-load_dotenv()  # Load .env from project root
 
 # --- Custom CSS ---
 st.markdown("""
