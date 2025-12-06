@@ -6,9 +6,7 @@ import csv
 import os
 import re
 
-#API_KEY = "6914383c598e95b832e882e3" lovish
-#API_KEY = "692d9a7cb75278167a03e1cc" aditya
-API_KEY = "692da13802188135941fe805"
+API_KEY = "6914383c598e95b832e882e3"
 
 def get_asins_from_excel(file_path):
     print(f"Reading ASINs from {file_path}...")
@@ -82,22 +80,14 @@ def clean_price(price_str):
     return re.sub(r"[^\d.]", "", price_str)
 
 def apply_price_formula(price_str, formula):
-    if not price_str or not formula or formula.strip().lower() == "x":
+    if not price_str or not formula or formula.strip() == "x":
         return price_str
     
     try:
         x = float(price_str)
-        # Support implicit multiplication (e.g., "2x" -> "2*x")
-        # Replace digit followed immediately by 'x' (case-insensitive) with digit*x
-        sanitized_formula = re.sub(r'(\d)([xX])', r'\1*x', formula)
-        # Replace 'x' followed immediately by digit with x*digit (less common but possible)
-        sanitized_formula = re.sub(r'([xX])(\d)', r'x*\2', sanitized_formula)
-        # Ensure all x are lowercase for eval context
-        sanitized_formula = sanitized_formula.lower()
-
         # Safe evaluation
         allowed_names = {"x": x, "abs": abs, "round": round, "min": min, "max": max}
-        new_price = eval(sanitized_formula, {"__builtins__": None}, allowed_names)
+        new_price = eval(formula, {"__builtins__": None}, allowed_names)
         return f"{new_price:.2f}"
     except Exception as e:
         print(f"Error applying formula '{formula}' to price '{price_str}': {e}")

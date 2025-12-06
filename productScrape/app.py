@@ -21,7 +21,7 @@ try:
 except ImportError:
     razorpay = None
 
-
+# --- Configuration ---
 st.set_page_config(
     page_title="Scraper Pro",
     page_icon="🚀",
@@ -29,14 +29,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-load_dotenv()  # Load .env from project root
-
-# --- Configuration ---
 BASE_DIR = Path(__file__).resolve().parent
 SCRAPER_SCRIPT = str(BASE_DIR / "asin.py")
 CHECKPOINT_FILE = str(BASE_DIR / "fetched_asins.txt")
 CSV_FILE = str(BASE_DIR / "products_export.csv")
 PID_FILE = str(BASE_DIR / "scraper.pid")
+DEDUCTED_FILE = str(BASE_DIR / "deducted_count.txt")
 DEFAULT_EXCEL = ""
 DB_FILE = str(BASE_DIR / "users.db")
 PENDING_SUFFIX = ".pending.json"
@@ -73,6 +71,9 @@ try:
     names = {c[1] for c in cols}
     if "password_hash" not in names:
         DB.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        DB.commit()
+    if "settings" not in names:
+        DB.execute("ALTER TABLE users ADD COLUMN settings TEXT")
         DB.commit()
 except Exception:
     pass
@@ -121,14 +122,11 @@ PLANS = {
 }
 
 def _secret_or_env(key: str, default: str = "") -> str:
-    # Prefer environment variables (e.g. from .env) first to avoid "No secrets found" warning
-    val = os.getenv(key)
-    if val:
-        return val
     try:
+        # Prefer Streamlit Cloud secrets when available
         return st.secrets.get(key, default)  # type: ignore[attr-defined]
     except Exception:
-        return default
+        return os.getenv(key, default)
 
 RAZORPAY_KEY_ID = _secret_or_env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = _secret_or_env("RAZORPAY_KEY_SECRET", "")
@@ -184,6 +182,28 @@ def deduct_credits(email: str, delta: int, reason: str | None = None) -> bool:
     DB.commit()
     return True
 
+def get_user_settings(email: str) -> dict:
+    if not email:
+        return {}
+    try:
+        cur = DB.execute("SELECT settings FROM users WHERE email=?", (email,))
+        row = cur.fetchone()
+        if row and row[0]:
+            return json.loads(row[0])
+    except:
+        pass
+    return {}
+
+def update_user_settings(email: str, settings: dict):
+    if not email:
+        return
+    try:
+        s_json = json.dumps(settings)
+        DB.execute("UPDATE users SET settings=? WHERE email=?", (s_json, email))
+        DB.commit()
+    except:
+        pass
+
 if "credits" not in st.session_state:
     st.session_state["credits"] = 0
 if "user_email" not in st.session_state:
@@ -197,9 +217,7 @@ if "selected_plan" not in st.session_state:
 if "deducted_fetched" not in st.session_state:
     st.session_state["deducted_fetched"] = 0
 
-
-
-
+load_dotenv()  # Load .env from project root
 
 # --- Custom CSS ---
 st.markdown("""
@@ -330,6 +348,22 @@ def get_stats():
     skipped = fetched - successful
     return fetched, successful, skipped
 
+def get_deducted_count():
+    if os.path.exists(DEDUCTED_FILE):
+        try:
+            with open(DEDUCTED_FILE, "r") as f:
+                return int(f.read().strip())
+        except:
+            return 0
+    return 0
+
+def update_deducted_count(count):
+    try:
+        with open(DEDUCTED_FILE, "w") as f:
+            f.write(str(count))
+    except:
+        pass
+
 def is_running():
     if os.path.exists(PID_FILE):
         try:
@@ -352,9 +386,12 @@ def start_scraper(input_file, category, p_type, formula):
         st.error("Please upload a valid .xlsx file before starting.")
         return
     # Reset progressive deduction baseline
-    st.session_state["deducted_fetched"] = get_stats()[0]
+    update_deducted_count(get_stats()[0])
     
-    with open(str(BASE_DIR / "scraper.log"), "w") as log_file:
+    update_deducted_count(get_stats()[0])
+    
+    with open(str(BASE_DIR / "scraper.log"), "a") as log_file:
+        log_file.write(f"\n\n{'='*40}\nStarting Scraper: {time.strftime('%Y-%m-%d %H:%M:%S')}\n{'='*40}\n")
         process = subprocess.Popen(
             [sys.executable, "-u", SCRAPER_SCRIPT, input_file, category, p_type, formula],
             stdout=log_file,
@@ -393,6 +430,7 @@ def reset_stats():
         if os.path.exists(CSV_FILE): os.remove(CSV_FILE)
         log_path = str(BASE_DIR / "scraper.log")
         if os.path.exists(log_path): os.remove(log_path)
+        if os.path.exists(DEDUCTED_FILE): os.remove(DEDUCTED_FILE)
         # Do not reset credits here
         st.toast("♻️ Stats and files reset!")
         time.sleep(1)
@@ -430,30 +468,91 @@ def verify_payment(order_id: str, payment_id: str, signature: str):
 
 # --- Sidebar ---
 def render_navbar():
-    # Top bar with credits and add credits action
+    # Custom CSS for the sticky header
+    st.markdown("""
+        <style>
+        .block-container {
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+        }
+        .header-container {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: #161b22;
+            padding: 10px 20px;
+            border-bottom: 1px solid #30363d;
+            margin-bottom: 20px;
+            margin-top: -1rem; /* Counteract remaining padding if needed */
+        }
+        .header-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            height: 100%;
+        }
+        .user-info {
+            color: #a0a0a0;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            height: 100%;
+            gap: 15px;
+        }
+        .credits-val {
+            color: #0fd;
+            font-weight: 600;
+        }
+        /* Adjust button styling in header */
+        .header-btn button {
+            padding: 0.25rem 0.75rem;
+            min-height: auto;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     with st.container():
-        st.markdown(
-            """
-            <div style='position:sticky; top:0; z-index:1000; background:#161b22; padding:10px 16px; border-bottom:1px solid #30363d; display:flex; align-items:center; justify-content:space-between;'>
-              <div style='font-weight:600; color:#fff;'>Scraper Pro</div>
-              <div style='display:flex; gap:12px; align-items:center;'>
-                <span style='color:#a0a0a0;'>User: {user}</span>
-                <span style='color:#a0a0a0;'>Credits: <strong style='color:#0fd;'> {credits} </strong></span>
-              </div>
-            </div>
-            """.format(user=st.session_state.get("user_email", "-"), credits=st.session_state.get("credits", 0)),
-            unsafe_allow_html=True,
-        )
-        cols = st.columns([1,1,6])
-        with cols[0]:
-            st.button("Add Credits", type="primary", use_container_width=True, key="add_credits_btn")
-        with cols[1]:
-            if st.button("Logout", use_container_width=True):
+        st.markdown('<div class="header-container">', unsafe_allow_html=True)
+        
+        c1, c2, c3, c4 = st.columns([2, 3, 1, 1])
+        
+        with c1:
+            st.markdown('<div class="header-title">🚀 Scraper Pro</div>', unsafe_allow_html=True)
+            
+        with c2:
+            u_email = st.session_state.get("user_email", "-")
+            u_credits = st.session_state.get("credits", 0)
+            st.markdown(
+                f"""
+                <div class="user-info">
+                    <span>{u_email}</span>
+                    <span>Credits: <span class="credits-val">{u_credits}</span></span>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+            
+        with c3:
+            st.markdown('<div class="header-btn">', unsafe_allow_html=True)
+            if st.button("Add Credits", type="primary", use_container_width=True, key="hdr_add_credits"):
+                # Logic to scroll to plans or just show toast
+                st.toast("Scroll down to purchase plans!")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        with c4:
+            st.markdown('<div class="header-btn">', unsafe_allow_html=True)
+            if st.button("Logout", use_container_width=True, key="hdr_logout"):
                 st.session_state["logged_in"] = False
                 st.session_state["user_email"] = ""
                 st.session_state["credits"] = 0
                 st.session_state["pending_order"] = None
                 st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
 def render_login():
     st.title("🔐 Login to Scraper Pro")
@@ -508,11 +607,29 @@ with st.sidebar:
     st.metric("Total Target ASINs", total_asins)
     
     st.markdown("### 3. Pricing Rules")
-    price_formula = st.text_input("Price Formula (use 'x' as price)", value="x", help="Example: 'x * 1.5' to increase by 50%, or 'x + 10' to add $10")
+    
+    # Load settings
+    user_settings = get_user_settings(st.session_state.get("user_email"))
+    
+    # Defaults
+    def_formula = user_settings.get("price_formula", "x")
+    def_category = user_settings.get("product_category", "Health & Supplements")
+    def_type = user_settings.get("product_type", "Dietary Supplement")
+
+    price_formula = st.text_input("Price Formula (use 'x' as price)", value=def_formula, help="Example: 'x * 1.5' to increase by 50%, or 'x + 10' to add $10")
 
     st.markdown("### 4. CSV Settings")
-    product_category = st.text_input("Product Category", value="Health & Supplements")
-    product_type = st.text_input("Product Type", value="Dietary Supplement")
+    product_category = st.text_input("Product Category", value=def_category)
+    product_type = st.text_input("Product Type", value=def_type)
+    
+    # Save settings if changed
+    new_settings = {
+        "price_formula": price_formula,
+        "product_category": product_category,
+        "product_type": product_type
+    }
+    if new_settings != user_settings and st.session_state.get("user_email"):
+        update_user_settings(st.session_state["user_email"], new_settings)
 
     # Capture payment verification from query params
     qp = st.experimental_get_query_params()
@@ -745,14 +862,14 @@ def render_terminal():
 if is_running():
     # Progressive credit deduction per fetched product
     current_fetched = get_stats()[0]
-    prev_deducted = st.session_state.get("deducted_fetched", 0)
+    prev_deducted = get_deducted_count()
     delta = current_fetched - prev_deducted
     if delta > 0:
         if st.session_state["credits"] >= delta:
             if deduct_credits(st.session_state["user_email"], delta, reason="scrape"):
                 st.session_state["credits"] = load_credits(st.session_state["user_email"])
-                st.session_state["deducted_fetched"] = current_fetched
-                st.toast(f"Deducted {delta} credits. Remaining: {st.session_state['credits']}")
+                update_deducted_count(current_fetched)
+                # st.toast(f"Deducted {delta} credits. Remaining: {st.session_state['credits']}")
             else:
                 st.error("Out of credits. Stopping scraper.")
                 stop_scraper()
@@ -763,19 +880,4 @@ if is_running():
 else:
     render_terminal()
 
-# --- Transactions View ---
-st.markdown("### 💳 Credit Transactions")
-if st.session_state.get("user_email"):
-    try:
-        cur = DB.execute(
-            "SELECT created_at, delta, reason FROM credit_transactions WHERE email=? ORDER BY id DESC LIMIT 50",
-            (st.session_state["user_email"],)
-        )
-        rows = cur.fetchall()
-        tx_df = pd.DataFrame(rows, columns=["Time", "Delta", "Reason"])
-        # Show latest first
-        st.dataframe(tx_df, use_container_width=True)
-    except Exception as e:
-        st.error(f"Failed to load transactions: {e}")
-else:
-    st.info("Login with your email to view your transactions.")
+

@@ -1,7 +1,0 @@
-streamlit
-pandas
-requests
-beautifulsoup4
-python-dotenv
-razorpay
-openpyxl
