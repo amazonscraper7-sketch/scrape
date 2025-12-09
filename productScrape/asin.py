@@ -88,11 +88,8 @@ def apply_price_formula(price_str, formula):
         x = float(price_str)
         # Normalize common shorthand like '2x' -> '2*x' and 'x2' -> 'x*2'
         norm = formula.strip()
-        # Insert * between number and x (e.g., 2x -> 2*x)
-        norm = re.sub(r"(?<![a-zA-Z_])(\d+(?:\.\d+)?)\s*x", r"\1*x", norm)
-        # Insert * between x and number (e.g., x2 -> x*2)
+        norm = re.sub(r"(?<![A-Za-z_])(\d+(?:\.\d+)?)\s*x", r"\1*x", norm)
         norm = re.sub(r"x\s*(\d+(?:\.\d+)?)", r"x*\1", norm)
-
         # Safe evaluation
         allowed_names = {"x": x, "abs": abs, "round": round, "min": min, "max": max}
         new_price = eval(norm, {"__builtins__": None}, allowed_names)
@@ -326,4 +323,3 @@ with open(csv_file, mode='a', newline='', encoding='utf-8') as f:
             print(f"Completed {processed}/{total}: {asin}")
 
 print("Done.")
-

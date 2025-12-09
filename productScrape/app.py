@@ -5,10 +5,16 @@ import sys
 import os
 import signal
 import time
+import csv
 import json
 import hmac
 import hashlib
 from pathlib import Path
+try:
+    from dotenv import load_dotenv
+except Exception:
+    def load_dotenv(*args, **kwargs):
+        return False
 import sqlite3
 try:
     import razorpay
@@ -115,9 +121,16 @@ PLANS = {
     "1M": {"price": 180.00, "credits": 1_000_000},
 }
 
-RAZORPAY_KEY_ID = ""
-RAZORPAY_KEY_SECRET = ""
-RAZORPAY_CURRENCY = ""
+def _secret_or_env(key: str, default: str = "") -> str:
+    try:
+        # Prefer Streamlit Cloud secrets when available
+        return st.secrets.get(key, default)  # type: ignore[attr-defined]
+    except Exception:
+        return os.getenv(key, default)
+
+RAZORPAY_KEY_ID = _secret_or_env("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = _secret_or_env("RAZORPAY_KEY_SECRET", "")
+RAZORPAY_CURRENCY = _secret_or_env("RAZORPAY_CURRENCY", "USD")
 
 def load_credits(email: str) -> int:
     if not email:
@@ -204,6 +217,7 @@ if "selected_plan" not in st.session_state:
 if "deducted_fetched" not in st.session_state:
     st.session_state["deducted_fetched"] = 0
 
+load_dotenv()  # Load .env from project root
 
 # --- Custom CSS ---
 st.markdown("""
@@ -355,14 +369,13 @@ def is_running():
         try:
             with open(PID_FILE, "r") as f:
                 pid = int(f.read().strip())
-        except (ValueError, OSError):
+        except (OSError, ValueError):
             try:
                 os.remove(PID_FILE)
             except Exception:
                 pass
             return False
 
-        # On Windows, os.kill(pid, 0) sends CTRL_C_EVENT (0) which interrupts the child.
         if os.name == "nt":
             try:
                 import ctypes
@@ -393,7 +406,7 @@ def is_running():
                 return False
         else:
             try:
-                os.kill(pid, 0)  # POSIX-safe existence check
+                os.kill(pid, 0)
                 return True
             except OSError:
                 try:
@@ -422,15 +435,14 @@ def start_scraper(input_file, category, p_type, formula, concurrency: int = 5):
         log_file.write(f"\n\n{'='*40}\nStarting Scraper: {time.strftime('%Y-%m-%d %H:%M:%S')}\n{'='*40}\n")
         env = os.environ.copy()
         env["SCRAPER_CONCURRENCY"] = str(int(concurrency) if concurrency and concurrency > 0 else 5)
-        popen_kwargs = {
-            "args": [sys.executable, "-u", SCRAPER_SCRIPT, input_file, category, p_type, formula],
-            "stdout": log_file,
-            "stderr": subprocess.STDOUT,
-            "cwd": str(BASE_DIR),
-            "env": env,
-        }
+        popen_kwargs = dict(
+            args=[sys.executable, "-u", SCRAPER_SCRIPT, input_file, category, p_type, formula],
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            cwd=str(BASE_DIR),
+            env=env,
+        )
         if os.name == "nt":
-            # Detach child from our CTRL+C to avoid accidental KeyboardInterrupts.
             popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         process = subprocess.Popen(**popen_kwargs)
     
@@ -657,8 +669,7 @@ with st.sidebar:
     product_category = st.text_input("Product Category", value=def_category)
     product_type = st.text_input("Product Type", value=def_type)
     st.markdown("### 5. Performance")
-    concurrency = st.slider("Concurrent workers", min_value=1, max_value=20, value=5, step=1,
-                            help="Number of parallel requests to run in the scraper")
+    concurrency = st.slider("Concurrent workers", min_value=1, max_value=20, value=5, step=1, help="Parallel requests run by the scraper")
     
     # Save settings if changed
     new_settings = {
@@ -672,9 +683,13 @@ with st.sidebar:
     # Capture payment verification from query params
     qp = st.query_params
     if {"payment_id", "order_id", "signature"}.issubset(qp.keys()) and st.session_state.get("pending_order"):
-        pay_id = qp["payment_id"][0]
-        ord_id = qp["order_id"][0]
-        sig = qp["signature"][0]
+        def _qp_val(v):
+            if isinstance(v, list):
+                return v[0] if v else ""
+            return v
+        pay_id = _qp_val(qp.get("payment_id"))
+        ord_id = _qp_val(qp.get("order_id"))
+        sig = _qp_val(qp.get("signature"))
         po = st.session_state["pending_order"]
         if ord_id == po["order_id"] and verify_payment(ord_id, pay_id, sig):
             add_credits(st.session_state["user_email"], po["credits"], reason=f"purchase {po['plan']}")
@@ -917,5 +932,3 @@ if is_running():
     st.rerun()
 else:
     render_terminal()
-
-
