@@ -7,7 +7,7 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-API_KEY = "6914383c598e95b832e882e3"
+API_KEY = "692da13802188135941fe805"
 
 def get_asins_from_excel(file_path):
     print(f"Reading ASINs from {file_path}...")
@@ -326,3 +326,4 @@ with open(csv_file, mode='a', newline='', encoding='utf-8') as f:
             print(f"Completed {processed}/{total}: {asin}")
 
 print("Done.")
+
