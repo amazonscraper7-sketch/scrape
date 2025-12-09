@@ -9,10 +9,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 API_KEY = "692da13802188135941fe805"
 
-def get_asins_from_excel(file_path):
+def get_asins_from_file(file_path):
     print(f"Reading ASINs from {file_path}...")
     try:
-        df = pd.read_excel(file_path)
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == ".csv":
+            df = pd.read_csv(file_path, header=None)
+        else:
+            df = pd.read_excel(file_path, header=None)
         # Flatten all columns into a single list
         all_asins = df.values.flatten()
         # Filter out NaNs and empty strings, convert to string
@@ -21,7 +25,7 @@ def get_asins_from_excel(file_path):
         print(f"Found {len(unique_asins)} unique ASINs.")
         return unique_asins
     except Exception as e:
-        print(f"Error reading Excel file: {e}")
+        print(f"Error reading file: {e}")
         return []
 
 import sys
@@ -33,7 +37,7 @@ product_category_arg = sys.argv[2] if len(sys.argv) > 2 else "Health & Supplemen
 product_type_arg = sys.argv[3] if len(sys.argv) > 3 else "Dietary Supplement"
 price_formula_arg = sys.argv[4] if len(sys.argv) > 4 else "x"
 
-asins = get_asins_from_excel(excel_file)
+asins = get_asins_from_file(excel_file)
 
 # Limit removed for production use
 # Limit removed for production use

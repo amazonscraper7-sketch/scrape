@@ -322,7 +322,13 @@ st.markdown("""
 
 def get_total_asins(file_path):
     try:
-        df = pd.read_excel(file_path)
+        if not file_path:
+            return 0
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == ".csv":
+            df = pd.read_csv(file_path, header=None)
+        else:
+            df = pd.read_excel(file_path, header=None)
         # Filter empty
         clean_asins = [str(a).strip() for a in df.values.flatten() if pd.notna(a) and str(a).strip() != ""]
         return len(sorted(list(set(clean_asins))))
