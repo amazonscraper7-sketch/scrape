@@ -5,16 +5,10 @@ import sys
 import os
 import signal
 import time
-import csv
 import json
 import hmac
 import hashlib
 from pathlib import Path
-try:
-    from dotenv import load_dotenv
-except Exception:
-    def load_dotenv(*args, **kwargs):
-        return False
 import sqlite3
 try:
     import razorpay
@@ -121,16 +115,9 @@ PLANS = {
     "1M": {"price": 180.00, "credits": 1_000_000},
 }
 
-def _secret_or_env(key: str, default: str = "") -> str:
-    try:
-        # Prefer Streamlit Cloud secrets when available
-        return st.secrets.get(key, default)  # type: ignore[attr-defined]
-    except Exception:
-        return os.getenv(key, default)
-
-RAZORPAY_KEY_ID = _secret_or_env("RAZORPAY_KEY_ID", "")
-RAZORPAY_KEY_SECRET = _secret_or_env("RAZORPAY_KEY_SECRET", "")
-RAZORPAY_CURRENCY = _secret_or_env("RAZORPAY_CURRENCY", "USD")
+RAZORPAY_KEY_ID = ""
+RAZORPAY_KEY_SECRET = ""
+RAZORPAY_CURRENCY = ""
 
 def load_credits(email: str) -> int:
     if not email:
@@ -217,7 +204,6 @@ if "selected_plan" not in st.session_state:
 if "deducted_fetched" not in st.session_state:
     st.session_state["deducted_fetched"] = 0
 
-load_dotenv()  # Load .env from project root
 
 # --- Custom CSS ---
 st.markdown("""
@@ -369,13 +355,55 @@ def is_running():
         try:
             with open(PID_FILE, "r") as f:
                 pid = int(f.read().strip())
-            os.kill(pid, 0) # Check if process exists
-            return True
-        except (OSError, ValueError):
-            os.remove(PID_FILE)
+        except (ValueError, OSError):
+            try:
+                os.remove(PID_FILE)
+            except Exception:
+                pass
+            return False
+
+        # On Windows, os.kill(pid, 0) sends CTRL_C_EVENT (0) which interrupts the child.
+        if os.name == "nt":
+            try:
+                import ctypes
+                from ctypes import wintypes
+                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                STILL_ACTIVE = 259
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+                if not handle:
+                    try:
+                        os.remove(PID_FILE)
+                    except Exception:
+                        pass
+                    return False
+                exit_code = wintypes.DWORD()
+                kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+                kernel32.CloseHandle(handle)
+                if exit_code.value == STILL_ACTIVE:
+                    return True
+                else:
+                    try:
+                        os.remove(PID_FILE)
+                    except Exception:
+                        pass
+                    return False
+            except Exception:
+                # Fallback: consider not running if check fails
+                return False
+        else:
+            try:
+                os.kill(pid, 0)  # POSIX-safe existence check
+                return True
+            except OSError:
+                try:
+                    os.remove(PID_FILE)
+                except Exception:
+                    pass
+                return False
     return False
 
-def start_scraper(input_file, category, p_type, formula):
+def start_scraper(input_file, category, p_type, formula, concurrency: int = 5):
     if is_running():
         st.toast("⚠️ Scraper is already running!")
         return
@@ -392,12 +420,19 @@ def start_scraper(input_file, category, p_type, formula):
     
     with open(str(BASE_DIR / "scraper.log"), "a") as log_file:
         log_file.write(f"\n\n{'='*40}\nStarting Scraper: {time.strftime('%Y-%m-%d %H:%M:%S')}\n{'='*40}\n")
-        process = subprocess.Popen(
-            [sys.executable, "-u", SCRAPER_SCRIPT, input_file, category, p_type, formula],
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            cwd=str(BASE_DIR)
-        )
+        env = os.environ.copy()
+        env["SCRAPER_CONCURRENCY"] = str(int(concurrency) if concurrency and concurrency > 0 else 5)
+        popen_kwargs = {
+            "args": [sys.executable, "-u", SCRAPER_SCRIPT, input_file, category, p_type, formula],
+            "stdout": log_file,
+            "stderr": subprocess.STDOUT,
+            "cwd": str(BASE_DIR),
+            "env": env,
+        }
+        if os.name == "nt":
+            # Detach child from our CTRL+C to avoid accidental KeyboardInterrupts.
+            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        process = subprocess.Popen(**popen_kwargs)
     
     with open(PID_FILE, "w") as f:
         f.write(str(process.pid))
@@ -621,6 +656,9 @@ with st.sidebar:
     st.markdown("### 4. CSV Settings")
     product_category = st.text_input("Product Category", value=def_category)
     product_type = st.text_input("Product Type", value=def_type)
+    st.markdown("### 5. Performance")
+    concurrency = st.slider("Concurrent workers", min_value=1, max_value=20, value=5, step=1,
+                            help="Number of parallel requests to run in the scraper")
     
     # Save settings if changed
     new_settings = {
@@ -632,7 +670,7 @@ with st.sidebar:
         update_user_settings(st.session_state["user_email"], new_settings)
 
     # Capture payment verification from query params
-    qp = st.experimental_get_query_params()
+    qp = st.query_params
     if {"payment_id", "order_id", "signature"}.issubset(qp.keys()) and st.session_state.get("pending_order"):
         pay_id = qp["payment_id"][0]
         ord_id = qp["order_id"][0]
@@ -643,7 +681,7 @@ with st.sidebar:
             st.session_state["credits"] = load_credits(st.session_state["user_email"])
             st.session_state["pending_order"] = None
             clear_pending_order(st.session_state["user_email"])
-            st.experimental_set_query_params()  # Clear params to avoid double credit
+            st.query_params.clear()  # Clear params to avoid double credit
             st.success(f"Payment verified. Added {po['credits']} credits.")
         else:
             st.error("Payment verification failed. Check order/payment IDs and signature.")
@@ -809,7 +847,7 @@ with c1:
     col_op1, col_op2 = st.columns(2)
     with col_op1:
         if st.button("▶️ Start Scraping", type="primary", use_container_width=True, disabled=is_running()):
-            start_scraper(target_file, product_category, product_type, price_formula)
+            start_scraper(target_file, product_category, product_type, price_formula, concurrency)
     with col_op2:
         if st.button("⏹️ Stop Scraping", type="secondary", use_container_width=True, disabled=not is_running()):
             stop_scraper()

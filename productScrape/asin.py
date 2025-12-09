@@ -5,6 +5,7 @@ import pandas as pd
 import csv
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 API_KEY = "6914383c598e95b832e882e3"
 
@@ -85,9 +86,16 @@ def apply_price_formula(price_str, formula):
     
     try:
         x = float(price_str)
+        # Normalize common shorthand like '2x' -> '2*x' and 'x2' -> 'x*2'
+        norm = formula.strip()
+        # Insert * between number and x (e.g., 2x -> 2*x)
+        norm = re.sub(r"(?<![a-zA-Z_])(\d+(?:\.\d+)?)\s*x", r"\1*x", norm)
+        # Insert * between x and number (e.g., x2 -> x*2)
+        norm = re.sub(r"x\s*(\d+(?:\.\d+)?)", r"x*\1", norm)
+
         # Safe evaluation
         allowed_names = {"x": x, "abs": abs, "round": round, "min": min, "max": max}
-        new_price = eval(formula, {"__builtins__": None}, allowed_names)
+        new_price = eval(norm, {"__builtins__": None}, allowed_names)
         return f"{new_price:.2f}"
     except Exception as e:
         print(f"Error applying formula '{formula}' to price '{price_str}': {e}")
@@ -131,6 +139,7 @@ csv_columns = [
 ]
 
 CHECKPOINT_FILE = "fetched_asins.txt"
+CONCURRENCY = int(os.getenv("SCRAPER_CONCURRENCY", "5"))
 
 def scrape_asin(asin):
     url = f"https://www.amazon.com/dp/{asin}"
@@ -239,70 +248,81 @@ with open(csv_file, mode='a', newline='', encoding='utf-8') as f:
     if not file_exists or os.stat(csv_file).st_size == 0:
         writer.writeheader()
 
-    total_asins = len(asins)
-    print(f"Starting scrape process for {total_asins} products...")
+    # Build target list excluding already fetched ASINs
+    targets = [a for a in asins if a and a not in fetched_asins]
+    total = len(targets)
+    print(f"Starting scrape with concurrency={CONCURRENCY} for {total} products...")
 
-    for i, asin in enumerate(asins, start=1):
-        if asin in fetched_asins:
-            continue
+    processed = 0
+    # Run network-bound scraping concurrently; write results in main thread
+    with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
+        futures = {executor.submit(scrape_asin, asin): asin for asin in targets}
 
-        print(f"Scraping {i}/{total_asins}: {asin}")
-        data = scrape_asin(asin)
-        
-        if data:
-            # Prepare data for CSV
-            handle = data["asin"]
-            title = data["title"]
-            body_html = create_body_html(data)
-            # Use Manufacturer if available, else fallback to Brand, else Amazon
-            vendor = data.get("manufacturer") or data["technical_details"].get("Brand", "Amazon")
-            product_type = product_type_arg # Use argument
-            tags = ""
-            variant_sku = data["asin"]
-            raw_price = clean_price(data["price"])
-            variant_price = apply_price_formula(raw_price, price_formula_arg)
-            
-            if not variant_price:
-                print(f"Skipping CSV write for {asin}: No price found.")
-            else:
-                # Get all images
-                images = data["all_images"] if data["all_images"] else []
-                
-                # Row 1: Main Product Data + First Image
-                row1 = {
-                    "Handle": handle,
-                    "Title": title,
-                    "Body (HTML)": body_html,
-                    "Vendor": vendor,
-                    "Type": product_type,
-                    "Tags": tags,
-                    "Published": "TRUE",
-                    "Variant SKU": variant_sku,
-                    "Variant Price": variant_price,
-                    "Image Src": images[0] if images else "",
-                    "Image Position": 1 if images else "",
-                    "Image Alt Text": title,
-                    "Product Category": product_category_arg, # Use argument
-                    "Cost Price": raw_price
-                }
-                writer.writerow(row1)
-                
-                # Rows 2..N: Additional Images (only Handle and Image columns needed)
-                for j, img_url in enumerate(images[1:], start=2):
-                    row_img = {
+        for future in as_completed(futures):
+            asin = futures[future]
+            processed += 1
+            try:
+                data = future.result()
+            except Exception as e:
+                print(f"Error scraping {asin}: {e}")
+                data = None
+
+            if data:
+                # Prepare data for CSV
+                handle = data["asin"]
+                title = data["title"]
+                body_html = create_body_html(data)
+                # Use Manufacturer if available, else fallback to Brand, else Amazon
+                vendor = data.get("manufacturer") or data["technical_details"].get("Brand", "Amazon")
+                product_type = product_type_arg  # Use argument
+                tags = ""
+                variant_sku = data["asin"]
+                raw_price = clean_price(data["price"])
+                variant_price = apply_price_formula(raw_price, price_formula_arg)
+
+                if not variant_price:
+                    print(f"Skipping CSV write for {asin}: No price found.")
+                else:
+                    # Get all images
+                    images = data["all_images"] if data["all_images"] else []
+
+                    # Row 1: Main Product Data + First Image
+                    row1 = {
                         "Handle": handle,
-                        "Image Src": img_url,
-                        "Image Position": j,
-                        "Image Alt Text": title
+                        "Title": title,
+                        "Body (HTML)": body_html,
+                        "Vendor": vendor,
+                        "Type": product_type,
+                        "Tags": tags,
+                        "Published": "TRUE",
+                        "Variant SKU": variant_sku,
+                        "Variant Price": variant_price,
+                        "Image Src": images[0] if images else "",
+                        "Image Position": 1 if images else "",
+                        "Image Alt Text": title,
+                        "Product Category": product_category_arg,  # Use argument
+                        "Cost Price": raw_price
                     }
-                    writer.writerow(row_img)
-                
-                # Flush to ensure data is written
-                f.flush()
+                    writer.writerow(row1)
+
+                    # Rows 2..N: Additional Images (only Handle and Image columns needed)
+                    for j, img_url in enumerate(images[1:], start=2):
+                        row_img = {
+                            "Handle": handle,
+                            "Image Src": img_url,
+                            "Image Position": j,
+                            "Image Alt Text": title
+                        }
+                        writer.writerow(row_img)
+
+                    # Flush to ensure data is written
+                    f.flush()
 
             # Update checkpoint (always, even if no price)
             with open(CHECKPOINT_FILE, "a") as cf:
                 cf.write(f"{asin}\n")
             fetched_asins.add(asin)
+
+            print(f"Completed {processed}/{total}: {asin}")
 
 print("Done.")
