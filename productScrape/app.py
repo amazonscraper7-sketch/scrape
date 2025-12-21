@@ -42,6 +42,7 @@ PENDING_SUFFIX = ".pending.json"
 # --- SQLite setup and credit helpers ---
 def _db_conn():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -118,7 +119,7 @@ def clear_pending_order(email: str):
 
 PLANS = {
     "200k": {"price": 100.00, "credits": 200_000},
-    "1M": {"price": 180.00, "credits": 1_000_000},
+    "1M": {"price": 200.00, "credits": 1_000_000},
 }
 
 def _secret_or_env(key: str, default: str = "") -> str:
@@ -442,7 +443,7 @@ def start_scraper(input_file, category, p_type, formula, concurrency: int = 5):
         env = os.environ.copy()
         env["SCRAPER_CONCURRENCY"] = str(int(concurrency) if concurrency and concurrency > 0 else 5)
         popen_kwargs = dict(
-            args=[sys.executable, "-u", SCRAPER_SCRIPT, input_file, category, p_type, formula],
+            args=[sys.executable, "-u", SCRAPER_SCRIPT, input_file, category, p_type, formula, st.session_state["user_email"]],
             stdout=log_file,
             stderr=subprocess.STDOUT,
             cwd=str(BASE_DIR),
@@ -919,19 +920,8 @@ def render_terminal():
         log_placeholder.info("No logs yet.")
 
 if is_running():
-    # Progressive credit deduction per fetched product
-    current_fetched = get_stats()[0]
-    prev_deducted = get_deducted_count()
-    delta = current_fetched - prev_deducted
-    if delta > 0:
-        if st.session_state["credits"] >= delta:
-            if deduct_credits(st.session_state["user_email"], delta, reason="scrape"):
-                st.session_state["credits"] = load_credits(st.session_state["user_email"])
-                update_deducted_count(current_fetched)
-                # st.toast(f"Deducted {delta} credits. Remaining: {st.session_state['credits']}")
-            else:
-                st.error("Out of credits. Stopping scraper.")
-                stop_scraper()
+    # Credit deduction is now handled by the scraper process directly
+    # Just refresh for logs
     for _ in range(10):  # Refresh loop
         render_terminal()
         time.sleep(0.5)

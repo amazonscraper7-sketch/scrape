@@ -6,6 +6,8 @@ import csv
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import sqlite3
+import time
 
 API_KEY = "692da13802188135941fe805"
 
@@ -36,6 +38,43 @@ excel_file = sys.argv[1] if len(sys.argv) > 1 else "asins_b0_500percol.xlsx"
 product_category_arg = sys.argv[2] if len(sys.argv) > 2 else "Health & Supplements"
 product_type_arg = sys.argv[3] if len(sys.argv) > 3 else "Dietary Supplement"
 price_formula_arg = sys.argv[4] if len(sys.argv) > 4 else "x"
+user_email_arg = sys.argv[5] if len(sys.argv) > 5 else ""
+
+DB_FILE = "users.db"
+
+def deduct_credit(email):
+    if not email:
+        return True # specific logic: if no email matches, maybe allow? or fail using strict mode. 
+        # For now, if no email, we assume admin or testing, but the app enforces email.
+    
+    try:
+        conn = sqlite3.connect(DB_FILE, timeout=10)
+        conn.execute("PRAGMA journal_mode=WAL") # Ensure WAL mode
+        cursor = conn.cursor()
+        
+        # Check credits
+        cursor.execute("SELECT credits FROM users WHERE email=?", (email,))
+        row = cursor.fetchone()
+        if not row or row[0] <= 0:
+            return False
+            
+        # Deduct
+        new_credits = row[0] - 1
+        cursor.execute("UPDATE users SET credits=? WHERE email=?", (new_credits, email))
+        
+        # Log transaction (optional, might be heavy for every single item, maybe batch? 
+        # For now, per item is safer for persistence)
+        # To avoid massive transaction log, maybe we don't log every single credit deduct in transaction table?
+        # But user wants persistence. Let's start with just updating the count.
+        # If we need detailed history, we can add it, but it might slow down scraping. 
+        # Let's keep it simple: UPDATE users.
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error deducting credit: {e}")
+        return False
 
 asins = get_asins_from_file(excel_file)
 
@@ -260,6 +299,15 @@ with open(csv_file, mode='a', newline='', encoding='utf-8') as f:
         futures = {executor.submit(scrape_asin, asin): asin for asin in targets}
 
         for future in as_completed(futures):
+            # Deduct credit first
+            if not deduct_credit(user_email_arg):
+                print("Insufficient credits! Stopping scraper.")
+                # We should probably cancel pending futures or just break and let them fail/finish
+                # Cancelling is hard with ThreadPoolExecutor easily without private access
+                # We will just exit the loop effectively for new writes, but threads are running. 
+                # Better to kill process? or just stop writing CSV.
+                os._exit(1) # Force exit to stop everything immediately
+
             asin = futures[future]
             processed += 1
             try:
