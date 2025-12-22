@@ -86,6 +86,7 @@ st.markdown(
     <div class="price">$100 <span class="unit">one-time</span></div>
     <div class="subtitle">200,000 credits</div>
     <ul class="features">
+      <li>5 concurrent workers</li>
       <li>Progressive per-product credit usage</li>
       <li>No expiration on credits</li>
     </ul>
@@ -96,9 +97,10 @@ st.markdown(
   <div class="plan">
     <div class="title">Pro</div>
     <div class="subtitle">Large, consistent scraping</div>
-    <div class="price">$180 <span class="unit">one-time</span></div>
+    <div class="price">$200 <span class="unit">one-time</span></div>
     <div class="subtitle">1,000,000 credits</div>
     <ul class="features">
+      <li>50 concurrent workers</li>
       <li> Progressive per-product credit usage</li>
       <li>No expiration on credits</li>
     </ul>

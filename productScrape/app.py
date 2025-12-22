@@ -739,6 +739,7 @@ with colA:
       <div class='plan'>
         <h4>Starter</h4>
         <p>200,000 credits</p>
+        <p>5 concurrent workers</p>
         <div class='price'>$100</div>
       </div>
     </div>
@@ -749,7 +750,8 @@ with colB:
       <div class='plan'>
         <h4>Pro</h4>
         <p>1,000,000 credits</p>
-        <div class='price'>$180</div>
+        <p>50 concurrent workers</p>
+        <div class='price'>$200</div>
       </div>
     </div>
     """, unsafe_allow_html=True)
@@ -758,7 +760,7 @@ colBtns = st.columns(2)
 with colBtns[0]:
     starter_buy = st.button("Buy Starter (200k / $100)", use_container_width=True)
 with colBtns[1]:
-    pro_buy = st.button("Buy Pro (1M / $180)", use_container_width=True)
+    pro_buy = st.button("Buy Pro (1M / $200)", use_container_width=True)
 
 plan_choice = None
 if starter_buy:
