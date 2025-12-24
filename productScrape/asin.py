@@ -9,7 +9,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import sqlite3
 import time
 
-API_KEY = "692da13802188135941fe805"
+#API_KEY = "692da13802188135941fe805"
+API_KEY = "692ee872d689969d98790ef4"
 
 def get_asins_from_file(file_path):
     print(f"Reading ASINs from {file_path}...")
