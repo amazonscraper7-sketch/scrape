@@ -754,6 +754,9 @@ with colB:
         <div class='price'>$200</div>
       </div>
     </div>
+    <p style='text-align: center; color: #a7b1c2; margin-top: 15px; font-size: 0.9rem;'>
+        <b>Note:</b> Credits are per month basis.
+    </p>
     """, unsafe_allow_html=True)
 
 colBtns = st.columns(2)

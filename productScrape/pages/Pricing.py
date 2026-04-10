@@ -66,7 +66,7 @@ st.caption("Choose the plan that fits your scale. Upgrade anytime.")
 col_intro, col_link = st.columns([0.7, 0.3])
 with col_intro:
     st.markdown(
-        "Upgrade credits for your scraping workflow. Prices are one-time purchases; credits never expire."
+        "Upgrade credits for your scraping workflow."
     )
 with col_link:
     # Link back to main app checkout
@@ -83,12 +83,11 @@ st.markdown(
   <div class="plan">
     <div class="title">Starter</div>
     <div class="subtitle">For testing and small jobs</div>
-    <div class="price">$100 <span class="unit">one-time</span></div>
+    <div class="price">$100 <span class="unit">per month</span></div>
     <div class="subtitle">200,000 credits</div>
     <ul class="features">
       <li>5 concurrent workers</li>
       <li>Progressive per-product credit usage</li>
-      <li>No expiration on credits</li>
     </ul>
     <div class="cta">
       <a class="btn btn-primary title" href="#" onclick="window.location.href='/'">Buy on Checkout</a>
@@ -97,12 +96,11 @@ st.markdown(
   <div class="plan">
     <div class="title">Pro</div>
     <div class="subtitle">Large, consistent scraping</div>
-    <div class="price">$200 <span class="unit">one-time</span></div>
+    <div class="price">$200 <span class="unit">per month</span></div>
     <div class="subtitle">1,000,000 credits</div>
     <ul class="features">
       <li>50 concurrent workers</li>
       <li> Progressive per-product credit usage</li>
-      <li>No expiration on credits</li>
     </ul>
     <div class="cta">
       <a class="btn btn-primary title" href="#" onclick="window.location.href='/'">Buy on Checkout</a>
@@ -115,7 +113,7 @@ st.markdown(
 
 st.markdown("""
 #### What are credits?
-Credits represent the unit of scraping work. Your balance decreases progressively as products are scraped. Unused credits never expire.
+Credits represent the unit of scraping work. Your balance decreases progressively as products are scraped. Credits are valid for one month, so you need to recharge every month.
 """)
 
 st.markdown("""
